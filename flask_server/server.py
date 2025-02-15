@@ -17,10 +17,10 @@ data = {}
 with app.app_context():
 
     # Top 5 rented films
-    top_films = db.session.execute(text("select film.title, film.description, film.rating, film.special_features, COUNT(film.title) as rented from rental \
+    top_films = db.session.execute(text("select film.title, film.description, film.release_year, film.rating, film.special_features, COUNT(film.title) as rented from rental \
                                         inner join inventory on rental.inventory_id = inventory.inventory_id \
                                         inner join film on film.film_id = inventory.film_id \
-                                        group by inventory.film_id, film.title, film.description, film.rating, film.special_features order by rented desc limit 5;"))
+                                        group by inventory.film_id, film.title, film.description, film.release_year, film.rating, film.special_features order by rented desc limit 5;"))
     
     film_rows = top_films.fetchall()
     film_json = [dict(zip(top_films.keys(), row)) for row in film_rows]
