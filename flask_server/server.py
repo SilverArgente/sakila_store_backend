@@ -17,6 +17,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 data = {}
+customer_data = []
 
 with app.app_context():
 
@@ -66,10 +67,33 @@ with app.app_context():
 
     data["top_actor_films"] = arr
 
+    customers = db.session.execute(text("select * from customer;"))
+    
+    customer_rows = customers.fetchall()
+    customer_json = [dict(zip(customers.keys(), row)) for row in customer_rows]
+    customer_data = customer_json
+    print(customer_json)
+
 
 @app.route("/top_5")
 def members():
     return jsonify(data)
+
+@app.route("/customers")
+def get_customers():
+    try:
+
+        return customer_data
+        '''
+        query = "SELECT * FROM customer;"
+
+        customers = db.session.execute(text(query))
+        customer_rows = customers.fetchall()
+        customer_list = [dict(row) for row in customer_rows]
+
+        return jsonify({"customer": customer_list})'''
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/film_search", methods=["GET"])
