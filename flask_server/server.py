@@ -1,10 +1,14 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from sqlalchemy import text
 from dataclasses import asdict
 from datetime import datetime
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*", 
+                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                                "allow_headers": ["Content-Type", "Authorization"]}})
 
 # Configure the database URI (e.g., SQLite for simplicity)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sakila.db'
@@ -66,6 +70,50 @@ with app.app_context():
 @app.route("/top_5")
 def members():
     return jsonify(data)
+
+
+@app.route("/film_search", methods=["GET"])
+def film_search():
+    query = request.args.get("query", "").lower()  # Get the search query
+    search_type = request.args.get("type", "Film Name").lower()  # Get the search type, default to "Film Name"
+
+    if not query:
+        return jsonify({"error": "No search query provided"}), 400
+
+    search_query = f"%{query}%"  # Format for LIKE search
+
+    # Based on search type, execute different queries
+    if search_type == "film name":
+        result = db.session.execute(
+            text("SELECT title, description, release_year, rating FROM film WHERE LOWER(title) LIKE :query"),
+            {"query": search_query}
+        )
+
+    elif search_type == "actor name":
+        result = db.session.execute(
+            text("SELECT film.title, actor.first_name, actor.last_name FROM film \
+                  INNER JOIN film_actor ON film.film_id = film_actor.film_id \
+                  INNER JOIN actor ON film_actor.actor_id = actor.actor_id \
+                  WHERE LOWER(actor.first_name) LIKE :query OR LOWER(actor.last_name) LIKE :query"),
+            {"query": search_query}
+        )
+
+    elif search_type == "genre":
+        result = db.session.execute(
+            text("SELECT film.title, category.name FROM film \
+                  INNER JOIN film_category ON film.film_id = film_category.film_id \
+                  INNER JOIN category ON film_category.category_id = category.category_id \
+                  WHERE LOWER(category.name) LIKE :query"),
+            {"query": search_query}
+        )
+
+    else:
+        return jsonify({"error": "Invalid search type"}), 400
+
+    result_rows = result.fetchall()
+    result_json = [dict(zip(result.keys(), row)) for row in result_rows]
+
+    return jsonify({"results": result_json})
 
 
 if __name__ == "__main__":
