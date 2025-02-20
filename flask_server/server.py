@@ -109,25 +109,51 @@ def film_search():
     # Based on search type, execute different queries
     if search_type == "film name":
         result = db.session.execute(
-            text("SELECT title, description, release_year, rating FROM film WHERE LOWER(title) LIKE :query"),
+            text("""SELECT film.title, film.description, film.release_year, film.special_features, film.rating, COUNT(inventory.inventory_id) AS copies FROM film
+                    LEFT JOIN inventory ON film.film_id = inventory.film_id
+                    LEFT JOIN rental ON inventory.inventory_id = rental.inventory_id AND rental.return_date IS NULL
+                    WHERE LOWER(film.title) LIKE :query
+                    GROUP BY film.film_id"""),
             {"query": search_query}
         )
 
     elif search_type == "actor name":
         result = db.session.execute(
-            text("SELECT film.title, actor.first_name, actor.last_name FROM film \
-                  INNER JOIN film_actor ON film.film_id = film_actor.film_id \
-                  INNER JOIN actor ON film_actor.actor_id = actor.actor_id \
-                  WHERE LOWER(actor.first_name) LIKE :query OR LOWER(actor.last_name) LIKE :query"),
+            text("""WITH RankedFilms AS (
+    SELECT film.title, film.description, film.release_year, film.rating, film.special_features, 
+           actor.first_name, actor.last_name, 
+           COUNT(inventory.inventory_id) AS copies,
+           ROW_NUMBER() OVER (PARTITION BY film.title ORDER BY actor.actor_id) AS row_num
+    FROM film_actor
+    INNER JOIN film ON film_actor.film_id = film.film_id
+    INNER JOIN actor ON film_actor.actor_id = actor.actor_id
+    LEFT JOIN inventory ON film.film_id = inventory.film_id
+    LEFT JOIN rental ON inventory.inventory_id = rental.inventory_id AND rental.return_date IS NULL
+    WHERE LOWER(actor.first_name) LIKE :query OR LOWER(actor.last_name) LIKE :query
+    GROUP BY film.film_id, actor.actor_id
+)
+SELECT title, description, release_year, rating, special_features, first_name, last_name, copies
+FROM RankedFilms
+WHERE row_num = 1;
+
+
+        """),
             {"query": search_query}
         )
 
     elif search_type == "genre":
         result = db.session.execute(
-            text("SELECT film.title, category.name FROM film \
-                  INNER JOIN film_category ON film.film_id = film_category.film_id \
-                  INNER JOIN category ON film_category.category_id = category.category_id \
-                  WHERE LOWER(category.name) LIKE :query"),
+            text("""SELECT film.title, film.description, film.release_year, film.rating, film.special_features, category.name AS genre,
+       COUNT(inventory.inventory_id) AS copies
+FROM film
+INNER JOIN film_category ON film.film_id = film_category.film_id
+INNER JOIN category ON film_category.category_id = category.category_id
+LEFT JOIN inventory ON film.film_id = inventory.film_id
+LEFT JOIN rental ON inventory.inventory_id = rental.inventory_id AND rental.return_date IS NULL
+WHERE LOWER(category.name) LIKE :query
+GROUP BY film.film_id, category.name;
+
+        """),
             {"query": search_query}
         )
 
