@@ -79,20 +79,50 @@ with app.app_context():
 def members():
     return jsonify(data)
 
-@app.route("/customers")
+@app.route("/customers", methods=["GET"])
 def get_customers():
     try:
+        query = request.args.get("query", "").strip().lower()
+        search_type = request.args.get("type", "name").lower()  # Default to name search
 
-        return customer_data
-        '''
-        query = "SELECT * FROM customer;"
+        if not query:
+            return jsonify(customer_data)  # Return all customers if no search query
 
-        customers = db.session.execute(text(query))
+        search_query = f"%{query}%"
+
+        if search_type == "customer_id":
+            sql_query = text("SELECT * FROM customer WHERE customer_id = :query")
+            params = {"query": query}
+        else:  # Default to searching by first or last name
+            sql_query = text("SELECT * FROM customer WHERE LOWER(first_name) LIKE :query OR LOWER(last_name) LIKE :query")
+            params = {"query": search_query}
+
+        customers = db.session.execute(sql_query, params)
         customer_rows = customers.fetchall()
-        customer_list = [dict(row) for row in customer_rows]
+        customer_list = [dict(zip(customers.keys(), row)) for row in customer_rows]
 
-        return jsonify({"customer": customer_list})'''
+        return jsonify(customer_list)
+    
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/customers/add", methods=["POST"])
+def add_customer():
+    data = request.get_json()
+    first_name = data.get("first_name")
+    last_name = data.get("last_name")
+    email = data.get("email")
+
+    if not first_name or not last_name or not email:
+        return jsonify({"error": "Missing required fields"}), 400
+
+    try:
+        new_customer = Customer(first_name=first_name, last_name=last_name, email=email)
+        db.session.add(new_customer)
+        db.session.commit()
+        return jsonify({"message": "Customer added successfully!"}), 201
+    except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
