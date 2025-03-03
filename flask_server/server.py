@@ -196,5 +196,51 @@ GROUP BY film.film_id, category.name;
     return jsonify({"results": result_json})
 
 
+@app.route('/rent_movie', methods=['POST'])
+def rent_movie():
+    data = request.json
+    customer_id = data.get("customer_id")
+    inventory_id = data.get("inventory_id")
+
+    if not customer_id or not inventory_id:
+        return jsonify({"error": "Missing customer_id or inventory_id"}), 400
+
+    try:
+        db.session.execute(text("""
+            INSERT INTO rental (rental_date, inventory_id, customer_id, return_date, staff_id)
+            VALUES (CURRENT_TIMESTAMP, :inventory_id, :customer_id, NULL, 1)
+        """), {"inventory_id": inventory_id, "customer_id": customer_id})
+
+        db.session.commit()
+
+        return jsonify({"message": "Movie rented successfully!"})
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+@app.route('/get_inventory_id', methods=['GET'])
+def get_inventory_id():
+    title = request.args.get("title")
+    if not title:
+        return jsonify({"error": "Missing movie title"}), 400
+
+    try:
+        result = db.session.execute(text("""
+            SELECT inventory_id FROM inventory 
+            JOIN film ON inventory.film_id = film.film_id
+            WHERE film.title = :title LIMIT 1
+        """), {"title": title}).fetchone()
+
+        if result:
+            return jsonify({"inventory_id": result[0]})
+        else:
+            return jsonify({"error": "Inventory ID not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)
