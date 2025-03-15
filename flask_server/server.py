@@ -6,18 +6,18 @@ from dataclasses import asdict
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*", 
-                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                                "allow_headers": ["Content-Type", "Authorization"]}})
+CORS(app=app, resources={r"*": {"origins": "*"}})
 
 # Configure the database URI (e.g., SQLite for simplicity)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sakila.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sakila.db?timeout=5'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 db = SQLAlchemy(app)
 
 data = {}
 customer_data = []
+
 
 with app.app_context():
 
@@ -72,14 +72,14 @@ with app.app_context():
     customer_rows = customers.fetchall()
     customer_json = [dict(zip(customers.keys(), row)) for row in customer_rows]
     customer_data = customer_json
-    print(customer_json)
+    # print(customer_json)
 
 
 @app.route("/top_5")
 def members():
     return jsonify(data)
 
-@app.route("/customers", methods=["GET"])
+@app.route("/customers", methods=["GET", "POST"])
 def get_customers():
     try:
         query = request.args.get("query", "").strip().lower()
@@ -106,24 +106,78 @@ def get_customers():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/customers/add", methods=["POST"])
+'''@app.route("/customer_rentals/<id>", methods=["GET"])
+def cust_rentals(id):
+    try:
+        
+        sql_query = text("""SELECT film.title FROM rental 
+LEFT JOIN inventory ON rental.inventory_id = inventory.inventory_id
+LEFT JOIN film ON film.film_id = inventory.film_id
+WHERE rental.customer_id = 1 AND return_date IS NULL""")
+
+        customers = db.session.execute(sql_query, {'id': id})
+        customer_rows = customers.fetchall()
+        customer_list = [dict(zip(customers.keys(), row)) for row in customer_rows]
+
+        return jsonify(customer_list)
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+'''
+
+@app.route("/add_customer", methods=["POST"])
 def add_customer():
     data = request.get_json()
-    first_name = data.get("first_name")
-    last_name = data.get("last_name")
-    email = data.get("email")
-
-    if not first_name or not last_name or not email:
-        return jsonify({"error": "Missing required fields"}), 400
+    first_name = data['first_name']
+    last_name = data['last_name']
+    email = data['email']
 
     try:
-        new_customer = Customer(first_name=first_name, last_name=last_name, email=email)
-        db.session.add(new_customer)
+        result = db.session.execute(
+        text("""INSERT INTO customer (first_name, last_name, email, address_id, active, create_date, customer_id, store_id, last_update)
+VALUES (:first_name, :last_name, :email, 1000, 1, CURRENT_TIMESTAMP, (SELECT MAX(customer_id) + 1 FROM customer), 1, CURRENT_TIMESTAMP)"""),
+        {"first_name": first_name, "last_name": last_name, "email": email}
+    )
         db.session.commit()
-        return jsonify({"message": "Customer added successfully!"}), 201
+        return jsonify({"message": "Successful Adding of Customer"}), 200
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        raise e
+        return jsonify({"message": "error"}), 500
+        
+    
+@app.route("/delete_customer", methods=["DELETE"])
+def delete_customer():
+    id = request.args.get('id')
+    print(id)
+    try:
+        result = db.session.execute(
+        text("""DELETE FROM customer WHERE customer_id = :id"""),
+        {"id": id}
+    )
+        db.session.commit()
+        return jsonify({"message": "Successful Deletion of Customer"}), 200
+    except Exception as e:
+        raise e
+        return jsonify({"message": "error"}), 500
+
+@app.route("/edit_customer", methods=["PUT"])
+def edit_customer():
+    id = request.args.get('id')
+    customer = request.get_json()
+
+    print(customer)
+    try:
+        result = db.session.execute(
+        text("""UPDATE customer
+            SET first_name = :first_name, last_name= :last_name, email=:email
+            WHERE customer_id = :id;"""),
+        {"first_name": customer['first_name'], "last_name": customer['last_name'], "email": customer['email'], "id": id}
+    )
+        db.session.commit()
+        return jsonify({"message": "Successful Deletion of Customer"}), 200
+    except Exception as e:
+        raise e
+        return jsonify({"message": "error"}), 500
 
 
 @app.route("/film_search", methods=["GET"])
@@ -207,8 +261,8 @@ def rent_movie():
 
     try:
         db.session.execute(text("""
-            INSERT INTO rental (rental_date, inventory_id, customer_id, return_date, staff_id)
-            VALUES (CURRENT_TIMESTAMP, :inventory_id, :customer_id, NULL, 1)
+            INSERT INTO rental (rental_id, rental_date, inventory_id, customer_id, return_date, staff_id, last_update)
+            VALUES ((SELECT MAX(rental_id) + 1 FROM rental), CURRENT_TIMESTAMP, :inventory_id, :customer_id, NULL, 1, CURRENT_TIMESTAMP)
         """), {"inventory_id": inventory_id, "customer_id": customer_id})
 
         db.session.commit()
